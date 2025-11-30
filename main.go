@@ -1,51 +1,48 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"net/http"
-	"os"
+	"sync/atomic"
 )
 
-func readinessCheckHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	w.WriteHeader(200)
-	w.Write([]byte("OK"))
-}
-
-func appHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	http.ServeFile(w, r, "app/index.html")
-}
-
-func assetsHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	// Generate directory listing for /app/assets
-	entries, err := os.ReadDir("app/assets")
-	if err != nil {
-		http.Error(w, "Not Found", http.StatusNotFound)
-		return
-	}
-
-	w.WriteHeader(200)
-	w.Write([]byte("<pre>\n"))
-	for _, entry := range entries {
-		w.Write([]byte(`<a href="` + entry.Name() + `">` + entry.Name() + `</a>\n`))
-	}
-	w.Write([]byte("</pre>"))
+type apiConfig struct {
+	fileserverHits atomic.Int32
 }
 
 func main() {
-	mux := http.NewServeMux() // router
-	mux.HandleFunc("/healthz", readinessCheckHandler)
-	mux.HandleFunc("/app", appHandler)
-	mux.HandleFunc("/app/assets", assetsHandler)
-	mux.Handle("/", http.FileServer(http.Dir(".")))
-	server := &http.Server{
-		Addr:    ":8080", // Bind to localhost:8080
-		Handler: mux,     // Use our empty mux
+	const filepathRoot = "."
+	const port = "8080"
+
+	apiCfg := apiConfig{
+		fileserverHits: atomic.Int32{},
 	}
 
-	log.Println("server running on :8080")
-	log.Fatal(server.ListenAndServe())
+	mux := http.NewServeMux()
+	mux.Handle("/app/", apiCfg.middlewareMetricsInc(http.StripPrefix("/app", http.FileServer(http.Dir(filepathRoot)))))
+	mux.HandleFunc("/healthz", handlerReadiness)
+	mux.HandleFunc("/metrics", apiCfg.handlerMetrics)
+	mux.HandleFunc("/reset", apiCfg.handlerReset)
 
+	srv := &http.Server{
+		Addr:    ":" + port,
+		Handler: mux,
+	}
+
+	log.Printf("Serving files from %s on port: %s\n", filepathRoot, port)
+	log.Fatal(srv.ListenAndServe())
+}
+
+func (cfg *apiConfig) handlerMetrics(w http.ResponseWriter, r *http.Request) {
+	w.Header().Add("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(fmt.Sprintf("Hits: %d", cfg.fileserverHits.Load())))
+}
+
+func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cfg.fileserverHits.Add(1)
+		next.ServeHTTP(w, r)
+	})
 }
