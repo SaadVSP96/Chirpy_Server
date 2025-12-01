@@ -20,7 +20,7 @@ WHERE id = $1;
 -- name: ListChirps :many
 SELECT *
 FROM chirps
-ORDER BY created_at DESC;
+ORDER BY created_at ASC;
 
 -- name: ListChirpsByUser :many
 SELECT *
