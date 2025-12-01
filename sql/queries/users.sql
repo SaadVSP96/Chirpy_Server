@@ -7,3 +7,6 @@ VALUES (
     $1                 -- first parameter passed in for email
 )
 RETURNING *;
+
+-- name: DeletAllUsers :exec
+DELETE FROM users;
