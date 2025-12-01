@@ -1,23 +1,41 @@
 package main
 
 import (
+	"database/sql"
 	"log"
 	"net/http"
+	"os"
 	"sync/atomic"
+
+	"github.com/SaadVSP96/Chirpy_Server.git/internal/database"
+	"github.com/joho/godotenv"
+	_ "github.com/lib/pq" // Postgres driver
+	// SQLC generated package
 )
 
 type apiConfig struct {
 	fileserverHits atomic.Int32
+	dbQueries      *database.Queries
 }
 
 func main() {
 	const filepathRoot = "."
 	const port = "8080"
-
+	// Load .env file
+	godotenv.Load()
+	// get db url and connect to db
+	dbURL := os.Getenv("DB_URL")
+	db, err := sql.Open("postgres", dbURL)
+	if err != nil {
+		log.Fatalf("Failed to connect to DB: %v", err)
+	}
+	dbQueries := database.New(db)
 	apiCfg := apiConfig{
 		fileserverHits: atomic.Int32{},
+		dbQueries:      dbQueries,
 	}
-
+	defer db.Close()
+	// server and endpoints logic.
 	mux := http.NewServeMux()
 	fsHandler := apiCfg.middlewareMetricsInc(http.StripPrefix("/app", http.FileServer(http.Dir(filepathRoot))))
 	mux.Handle("/app/", fsHandler)
