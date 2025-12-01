@@ -1,8 +1,10 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -21,6 +23,41 @@ type CreateChirpResponse struct {
 	UpdatedAt string `json:"updated_at"`
 	Body      string `json:"body"`
 	UserID    string `json:"user_id"`
+}
+
+func (cfg *apiConfig) handlerGetChirpByID(w http.ResponseWriter, r *http.Request) {
+	// Expected URL: /api/chirps/{chirpID}
+	pathParts := strings.Split(r.URL.Path, "/")
+	if len(pathParts) < 4 {
+		http.NotFound(w, r)
+		return
+	}
+	chirpIDStr := pathParts[3]
+
+	chirpUUID, err := uuid.Parse(chirpIDStr)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid chirp ID format", err)
+		return
+	}
+
+	chirp, err := cfg.dbQueries.GetChirpByID(r.Context(), chirpUUID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			http.NotFound(w, r)
+			return
+		}
+		respondWithError(w, http.StatusInternalServerError, "Error fetching chirp", err)
+		return
+	}
+
+	resp := CreateChirpResponse{
+		ID:        chirp.ID.String(),
+		CreatedAt: chirp.CreatedAt.Format(time.RFC3339),
+		UpdatedAt: chirp.UpdatedAt.Format(time.RFC3339),
+		Body:      chirp.Body,
+		UserID:    chirp.UserID.String(),
+	}
+	respondWithJSON(w, http.StatusOK, resp)
 }
 
 func (cfg *apiConfig) handlerGetChirps(w http.ResponseWriter, r *http.Request) {
