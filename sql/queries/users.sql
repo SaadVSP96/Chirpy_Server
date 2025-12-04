@@ -1,12 +1,21 @@
 -- name: CreateUser :one
-INSERT INTO users (id, created_at, updated_at, email)
+INSERT INTO users (id, created_at, updated_at, email, hashed_password)
 VALUES (
-    gen_random_uuid(), -- generate a new UUID for id
-    NOW(),             -- current timestamp for created_at
-    NOW(),             -- current timestamp for updated_at
-    $1                 -- first parameter passed in for email
+    gen_random_uuid(),
+    NOW(),
+    NOW(),
+    $1,
+    $2
 )
-RETURNING *;
+RETURNING id, created_at, updated_at, email, hashed_password;
+
 
 -- name: DeletAllUsers :exec
 DELETE FROM users;
+
+
+-- name: GetUserByEmail :one
+SELECT id, created_at, updated_at, email, hashed_password
+FROM users
+WHERE email = $1
+LIMIT 1;
