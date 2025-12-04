@@ -2,10 +2,13 @@ package auth_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/SaadVSP96/Chirpy_Server.git/internal/auth"
+	"github.com/google/uuid"
 )
 
+// auth.
 func TestPasswordHashing(t *testing.T) {
 	pw := "supersecret123"
 
@@ -21,5 +24,53 @@ func TestPasswordHashing(t *testing.T) {
 
 	if !ok {
 		t.Fatalf("password should match hash but does not")
+	}
+}
+
+func TestJWTLifecycle(t *testing.T) {
+	secret := "supersecret"
+	userID := uuid.New()
+
+	token, err := auth.MakeJWT(userID, secret, time.Hour)
+	if err != nil {
+		t.Fatalf("failed to make jwt: %v", err)
+	}
+
+	gotID, err := auth.ValidateJWT(token, secret)
+	if err != nil {
+		t.Fatalf("failed to validate jwt: %v", err)
+	}
+
+	if gotID != userID {
+		t.Fatalf("expected %v got %v", userID, gotID)
+	}
+}
+
+func TestJWTExpired(t *testing.T) {
+	secret := "abc123"
+	userID := uuid.New()
+
+	token, err := auth.MakeJWT(userID, secret, -time.Hour) // already expired
+	if err != nil {
+		t.Fatalf("make jwt failed: %v", err)
+	}
+
+	_, err = auth.ValidateJWT(token, secret)
+	if err == nil {
+		t.Fatalf("expected error for expired token, got none")
+	}
+}
+
+func TestJWTWrongSecret(t *testing.T) {
+	userID := uuid.New()
+
+	token, err := auth.MakeJWT(userID, "correctSecret", time.Hour)
+	if err != nil {
+		t.Fatalf("make jwt failed: %v", err)
+	}
+
+	_, err = auth.ValidateJWT(token, "wrongSecret")
+	if err == nil {
+		t.Fatalf("expected signature error but got none")
 	}
 }
