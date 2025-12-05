@@ -17,6 +17,7 @@ type apiConfig struct {
 	fileserverHits atomic.Int32
 	dbQueries      *database.Queries
 	platform       string
+	jwtSecret      string
 }
 
 func main() {
@@ -27,15 +28,20 @@ func main() {
 	// get db url and connect to db
 	dbURL := os.Getenv("DB_URL")
 	platform := os.Getenv("PLATFORM")
+	jwtSecret := os.Getenv("JWT_SECRET")
 	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
 		log.Fatalf("Failed to connect to DB: %v", err)
+	}
+	if jwtSecret == "" {
+		log.Fatal("JWT_SECRET is missing in .env")
 	}
 	dbQueries := database.New(db)
 	apiCfg := apiConfig{
 		fileserverHits: atomic.Int32{},
 		dbQueries:      dbQueries,
 		platform:       platform,
+		jwtSecret:      jwtSecret,
 	}
 	defer db.Close()
 	// server and endpoints logic.

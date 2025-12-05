@@ -9,12 +9,12 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/SaadVSP96/Chirpy_Server.git/internal/auth"
 	"github.com/SaadVSP96/Chirpy_Server.git/internal/database"
 )
 
 type CreateChirpRequest struct {
-	Body   string `json:"body"`
-	UserId string `json:"user_id"`
+	Body string `json:"body"`
 }
 
 type CreateChirpResponse struct {
@@ -92,27 +92,34 @@ func (cfg *apiConfig) handlerChirps(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	tokenString, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Invalid or missing token", err)
+		return
+	}
+
+	userID, err := auth.ValidateJWT(tokenString, cfg.jwtSecret)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Invalid token", err)
+		return
+	}
+
 	const maxChirpLength = 140
 	if len(params.Body) > maxChirpLength {
 		respondWithError(w, http.StatusBadRequest, "Chirp is too long", nil)
 		return
 	}
 
-	if params.UserId == "" {
+	if userID.String() == "" {
 		respondWithError(w, http.StatusBadRequest, "user id is missing", nil)
 		return
 	}
 
 	// Now add the profanity checker
 	params.Body = profanityCleaner(params.Body)
-	userUUID, err := uuid.Parse(params.UserId)
-	if err != nil {
-		respondWithError(w, http.StatusBadRequest, "Invalid user ID format", err)
-		return
-	}
 	chirp, err := cfg.dbQueries.CreateChirp(r.Context(), database.CreateChirpParams{
 		Body:   params.Body,
-		UserID: userUUID,
+		UserID: userID,
 	})
 
 	if err != nil {

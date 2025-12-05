@@ -1,6 +1,7 @@
 package auth_test
 
 import (
+	"net/http"
 	"testing"
 	"time"
 
@@ -72,5 +73,37 @@ func TestJWTWrongSecret(t *testing.T) {
 	_, err = auth.ValidateJWT(token, "wrongSecret")
 	if err == nil {
 		t.Fatalf("expected signature error but got none")
+	}
+}
+
+func TestGetBearerToken(t *testing.T) {
+	headers := http.Header{}
+	headers.Set("Authorization", "Bearer abc123")
+
+	token, err := auth.GetBearerToken(headers)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if token != "abc123" {
+		t.Fatalf("expected token 'abc123', got '%s'", token)
+	}
+}
+
+func TestGetBearerToken_NoHeader(t *testing.T) {
+	headers := http.Header{}
+	_, err := auth.GetBearerToken(headers)
+	if err == nil {
+		t.Fatalf("expected error, got nil")
+	}
+}
+
+func TestGetBearerToken_BadFormat(t *testing.T) {
+	headers := http.Header{}
+	headers.Set("Authorization", "Token xyz")
+
+	_, err := auth.GetBearerToken(headers)
+	if err == nil {
+		t.Fatalf("expected error for malformed header")
 	}
 }

@@ -1,6 +1,10 @@
 package auth
 
 import (
+	"errors"
+	"net/http"
+	"strings"
+
 	"github.com/alexedwards/argon2id"
 )
 
@@ -20,4 +24,25 @@ func CheckPasswordHash(password, hash string) (bool, error) {
 		return false, err
 	}
 	return match, nil
+}
+
+// GetBearerToken function which extracts bearer token from incoming request
+func GetBearerToken(headers http.Header) (string, error) {
+	// look for authorization Header
+	authHeader := headers.Get("Authorization")
+	if authHeader == "" {
+		return "", errors.New("no authorization header included")
+	}
+
+	// Must Begin with Bearer
+	if !strings.HasPrefix(authHeader, "Bearer ") {
+		return "", errors.New("malformed authorization header")
+	}
+
+	// Extract token portion
+	token := strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer "))
+	if token == "" {
+		return "", errors.New("empty bearer token")
+	}
+	return token, nil
 }

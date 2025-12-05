@@ -22,8 +22,9 @@ type CreateUserResponse struct {
 }
 
 type LoginRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
+	Email            string `json:"email"`
+	Password         string `json:"password"`
+	ExpiresInSeconds *int64 `json:"expires_in_seconds"` // pointer so it's optional
 }
 
 type LoginResponse struct {
@@ -31,6 +32,7 @@ type LoginResponse struct {
 	CreatedAt string `json:"created_at"`
 	UpdatedAt string `json:"updated_at"`
 	Email     string `json:"email"`
+	Token     string `json:"token"`
 }
 
 func (cfg *apiConfig) handlerCreateUser(w http.ResponseWriter, r *http.Request) {
@@ -86,27 +88,43 @@ func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, http.StatusBadRequest, "Email and password are required", nil)
 		return
 	}
-
-	// 1. Look up user by email
+	// Look up the user (using your new SQLC query)
 	user, err := cfg.dbQueries.GetUserByEmail(r.Context(), req.Email)
 	if err != nil {
 		respondWithError(w, http.StatusUnauthorized, "Incorrect email or password", nil)
 		return
 	}
 
-	// 2. Compare password with hash
-	ok, err := auth.CheckPasswordHash(req.Password, user.HashedPassword)
-	if err != nil || !ok {
+	// Compare password
+	ok, _ := auth.CheckPasswordHash(req.Password, user.HashedPassword)
+	if !ok {
 		respondWithError(w, http.StatusUnauthorized, "Incorrect email or password", nil)
 		return
 	}
 
-	// 3. Build the response (never send hashed password)
+	// Handle expiry parameter
+	expires := time.Hour
+	if req.ExpiresInSeconds != nil {
+		custom := time.Duration(*req.ExpiresInSeconds) * time.Second
+		if custom < time.Hour {
+			expires = custom
+		}
+	}
+
+	// Create token
+	token, err := auth.MakeJWT(user.ID, cfg.jwtSecret, expires)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to create JWT", err)
+		return
+	}
+
+	// Response
 	resp := LoginResponse{
 		ID:        user.ID.String(),
 		CreatedAt: user.CreatedAt.Format(time.RFC3339),
 		UpdatedAt: user.UpdatedAt.Format(time.RFC3339),
 		Email:     user.Email,
+		Token:     token,
 	}
 
 	respondWithJSON(w, http.StatusOK, resp)
