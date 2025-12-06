@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -84,6 +85,16 @@ func (cfg *apiConfig) handlerGetChirps(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, http.StatusInternalServerError, "Error while getting chirps from db", err)
 		return
 	}
+
+	sortParam := r.URL.Query().Get("sort")
+
+	sort.Slice(chirps, func(i, j int) bool {
+		if sortParam == "desc" {
+			return chirps[i].CreatedAt.After(chirps[j].CreatedAt)
+		}
+		// default: asc
+		return chirps[i].CreatedAt.Before(chirps[j].CreatedAt)
+	})
 
 	// convert []Chirp -> []CreateChirpResponse
 	response := make([]CreateChirpResponse, 0, len(chirps))
