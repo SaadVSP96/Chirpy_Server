@@ -18,6 +18,7 @@ type apiConfig struct {
 	dbQueries      *database.Queries
 	platform       string
 	jwtSecret      string
+	polkaKey       string
 }
 
 func main() {
@@ -29,6 +30,7 @@ func main() {
 	dbURL := os.Getenv("DB_URL")
 	platform := os.Getenv("PLATFORM")
 	jwtSecret := os.Getenv("JWT_SECRET")
+	polkaKey := os.Getenv("POLKA_KEY")
 	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
 		log.Fatalf("Failed to connect to DB: %v", err)
@@ -36,12 +38,16 @@ func main() {
 	if jwtSecret == "" {
 		log.Fatal("JWT_SECRET is missing in .env")
 	}
+	if polkaKey == "" {
+		log.Fatal("POLKA_KEY is missing in .env")
+	}
 	dbQueries := database.New(db)
 	apiCfg := apiConfig{
 		fileserverHits: atomic.Int32{},
 		dbQueries:      dbQueries,
 		platform:       platform,
 		jwtSecret:      jwtSecret,
+		polkaKey:       polkaKey,
 	}
 	defer db.Close()
 	// server and endpoints logic.
@@ -60,7 +66,7 @@ func main() {
 	mux.HandleFunc("DELETE /api/chirps/{chirpID}", apiCfg.handlerDeleteChirp)
 	mux.HandleFunc("GET /api/chirps/", apiCfg.handlerGetChirpByID)
 	mux.HandleFunc("GET /api/chirps", apiCfg.handlerGetChirps)
-
+	mux.HandleFunc("POST /api/polka/webhooks", apiCfg.handlerPolkaWebhooks)
 	mux.HandleFunc("POST /admin/reset", apiCfg.handlerReset)
 	mux.HandleFunc("GET /admin/metrics", apiCfg.handlerMetrics)
 

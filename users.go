@@ -1,12 +1,15 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"time"
 
 	"github.com/SaadVSP96/Chirpy_Server.git/internal/auth"
 	"github.com/SaadVSP96/Chirpy_Server.git/internal/database"
+	"github.com/google/uuid"
 )
 
 type CreateUserRequest struct {
@@ -15,10 +18,11 @@ type CreateUserRequest struct {
 }
 
 type CreateUserResponse struct {
-	ID        string `json:"id"`
-	CreatedAt string `json:"created_at"`
-	UpdatedAt string `json:"updated_at"`
-	Email     string `json:"email"`
+	ID          string `json:"id"`
+	CreatedAt   string `json:"created_at"`
+	UpdatedAt   string `json:"updated_at"`
+	Email       string `json:"email"`
+	IsChirpyRed bool   `json:"is_chirpy_red"`
 }
 
 type LoginRequest struct {
@@ -34,6 +38,14 @@ type LoginResponse struct {
 	Email        string `json:"email"`
 	Token        string `json:"token"`
 	RefreshToken string `json:"refresh_token"`
+	IsChirpyRed  bool   `json:"is_chirpy_red"`
+}
+
+type PolkaWebhookRequest struct {
+	Event string `json:"event"`
+	Data  struct {
+		UserID string `json:"user_id"`
+	} `json:"data"`
 }
 
 func (cfg *apiConfig) handlerUpdateUser(w http.ResponseWriter, r *http.Request) {
@@ -76,10 +88,11 @@ func (cfg *apiConfig) handlerUpdateUser(w http.ResponseWriter, r *http.Request) 
 	}
 	// Respond without password
 	respondWithJSON(w, 200, CreateUserResponse{
-		ID:        user.ID.String(),
-		CreatedAt: user.CreatedAt.Format(time.RFC3339),
-		UpdatedAt: user.UpdatedAt.Format(time.RFC3339),
-		Email:     user.Email,
+		ID:          user.ID.String(),
+		CreatedAt:   user.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:   user.UpdatedAt.Format(time.RFC3339),
+		Email:       user.Email,
+		IsChirpyRed: user.IsChirpyRed,
 	})
 
 }
@@ -119,10 +132,11 @@ func (cfg *apiConfig) handlerCreateUser(w http.ResponseWriter, r *http.Request) 
 
 	// build a response to send back in the response to post request
 	respondWithJSON(w, http.StatusCreated, CreateUserResponse{
-		ID:        user.ID.String(),
-		CreatedAt: user.CreatedAt.Format(time.RFC3339),
-		UpdatedAt: user.UpdatedAt.Format(time.RFC3339),
-		Email:     user.Email,
+		ID:          user.ID.String(),
+		CreatedAt:   user.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:   user.UpdatedAt.Format(time.RFC3339),
+		Email:       user.Email,
+		IsChirpyRed: user.IsChirpyRed,
 	})
 }
 
@@ -185,6 +199,7 @@ func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, r *http.Request) {
 		Email:        user.Email,
 		Token:        accessToken,
 		RefreshToken: refreshToken,
+		IsChirpyRed:  user.IsChirpyRed,
 	}
 
 	respondWithJSON(w, http.StatusOK, resp)
@@ -266,4 +281,51 @@ func (cfg *apiConfig) handlerRevoke(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (cfg *apiConfig) handlerPolkaWebhooks(w http.ResponseWriter, r *http.Request) {
+	var req PolkaWebhookRequest
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondWithError(w, http.StatusBadRequest, "invalid JSON", err)
+		return
+	}
+
+	polkaKey, err := auth.GetAPIKey(r.Header)
+
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "couldnt find polka key", err)
+		return
+	}
+
+	if polkaKey != cfg.polkaKey {
+		respondWithError(w, http.StatusUnauthorized, "invalid polka key", err)
+		return
+	}
+
+	if req.Event != "user.upgraded" {
+		// Ignore other events
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	userID, err := uuid.Parse(req.Data.UserID)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "invalid user_id", err)
+		return
+	}
+
+	// upgrade
+	err = cfg.dbQueries.UpgradeUserToChirpyRed(r.Context(), userID)
+	if err != nil {
+		// If user not found
+		if errors.Is(err, sql.ErrNoRows) {
+			respondWithError(w, http.StatusNotFound, "User not found", err)
+			return
+		}
+		respondWithError(w, http.StatusInternalServerError, "DB error", err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+
 }
