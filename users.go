@@ -36,6 +36,54 @@ type LoginResponse struct {
 	RefreshToken string `json:"refresh_token"`
 }
 
+func (cfg *apiConfig) handlerUpdateUser(w http.ResponseWriter, r *http.Request) {
+	// get JWT bearer token
+	tokenString, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Missing token", nil)
+		return
+	}
+	// Validate JWT bearer token
+	userID, err := auth.ValidateJWT(tokenString, cfg.jwtSecret)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Invalid token", err)
+		return
+	}
+	// Parse Body
+	var req struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+	json.NewDecoder(r.Body).Decode(&req)
+	if req.Email == "" || req.Password == "" {
+		respondWithError(w, http.StatusBadRequest, "Email and password required", nil)
+		return
+	}
+	// hash new password
+	hashed, err := auth.HashPassword(req.Password)
+	if err != nil {
+		respondWithError(w, 500, "Failed To Hash", err)
+	}
+	// run SQL update
+	user, err := cfg.dbQueries.UpdateUser(r.Context(), database.UpdateUserParams{
+		ID:             userID,
+		Email:          req.Email,
+		HashedPassword: hashed,
+	})
+	if err != nil {
+		respondWithError(w, 500, "Update failed", err)
+		return
+	}
+	// Respond without password
+	respondWithJSON(w, 200, CreateUserResponse{
+		ID:        user.ID.String(),
+		CreatedAt: user.CreatedAt.Format(time.RFC3339),
+		UpdatedAt: user.UpdatedAt.Format(time.RFC3339),
+		Email:     user.Email,
+	})
+
+}
+
 func (cfg *apiConfig) handlerCreateUser(w http.ResponseWriter, r *http.Request) {
 	var req CreateUserRequest
 

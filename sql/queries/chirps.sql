@@ -27,3 +27,8 @@ SELECT *
 FROM chirps
 WHERE user_id = $1
 ORDER BY created_at DESC;
+
+-- name: DeleteChirp :execrows
+DELETE FROM chirps
+WHERE id = $1
+  AND user_id = $2;

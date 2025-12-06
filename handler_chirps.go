@@ -134,3 +134,55 @@ func (cfg *apiConfig) handlerChirps(w http.ResponseWriter, r *http.Request) {
 		UserID:    chirp.UserID.String(),
 	})
 }
+
+func (cfg *apiConfig) handlerDeleteChirp(w http.ResponseWriter, r *http.Request) {
+	// Parse chirpID from URL path manually (same approach as handlerGetChirpByID)
+	pathParts := strings.Split(r.URL.Path, "/")
+	if len(pathParts) < 4 {
+		respondWithError(w, http.StatusBadRequest, "Invalid chirp ID format", nil)
+		return
+	}
+	chirpIDStr := pathParts[3]
+
+	chirpID, err := uuid.Parse(chirpIDStr)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid Chirp ID", err)
+		return
+	}
+
+	// Rest of your existing code remains the same...
+	tokenStr, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		respondWithError(w, 401, "Missing or invalid auth token", err)
+		return
+	}
+
+	userID, err := auth.ValidateJWT(tokenStr, cfg.jwtSecret)
+	if err != nil {
+		respondWithError(w, 401, "Invalid token", err)
+		return
+	}
+
+	chirp, err := cfg.dbQueries.GetChirpByID(r.Context(), chirpID)
+	if err != nil {
+		respondWithError(w, 404, "Chirp not found", err)
+		return
+	}
+
+	if chirp.UserID != userID {
+		respondWithError(w, 403, "Forbidden: you cannot delete another user's chirp", nil)
+		return
+	}
+
+	rows, err := cfg.dbQueries.DeleteChirp(r.Context(), database.DeleteChirpParams{ID: chirpID, UserID: userID})
+	if err != nil {
+		respondWithError(w, 500, "Failed to delete chirp", err)
+		return
+	}
+	if rows == 0 {
+		respondWithError(w, 404, "Chirp not found", nil)
+		return
+	}
+
+	w.WriteHeader(204)
+}
